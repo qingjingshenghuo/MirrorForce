@@ -44,11 +44,11 @@ python -m mirrorforce.distill.collect --teacher /tmp/mirrorforce-distill.sock \
   --out /path/runs/demo --seed 100000 --pairs 10 --hourly-yuan 2 --budget-yuan 20
 
 python -m mirrorforce.distill.train --data /path/runs/demo/samples.jsonl \
-  --out /path/runs/sft --objective sft --steps 200 --tokens-per-update 16384
+  --out /path/runs/sft --objective sft --steps 200 --tokens-per-update 16384 --context-limit 16384
 
 # --adapter 只加载权重启动新轮次；--resume 恢复同一任务的优化器和随机状态。
 python -m mirrorforce.distill.train --data /path/runs/demo/samples.jsonl \
-  --out /path/runs/sft-resumed --objective sft --steps 300 --tokens-per-update 16384 \
+  --out /path/runs/sft-resumed --objective sft --steps 300 --tokens-per-update 16384 --context-limit 16384 \
   --resume /path/runs/sft/step-000050
 ```
 
@@ -59,6 +59,8 @@ python -m mirrorforce.distill.train --data /path/runs/demo/samples.jsonl \
 为严格匹配预算，编排器默认每个更新恰好使用 16384 个有效输入 token，通过完整样本长度组批实现；不可达则失败。此组批会改变不同长度样本的采样频率，三个分支采用相同规则并记录每步样本数。单独 train 命令不指定 tokens-per-update 时使用固定梯度累积次数，不应据此声称严格等 token。
 
 200 万 token 上限下，16384 配额最多进行 122 次更新，而非 200；steps 是另一上限。以 result.json 和 metrics.jsonl 的实际更新次数、token 数为准。三组必须同时匹配实际累计更新数和 token 数，并另报采样费用。中断恢复要求数据摘要、目标、学习率、种子及组批配置一致。
+
+CUDA训练启用严格确定性算法并关闭TF32，在初始化CUDA前设置 `CUBLAS_WORKSPACE_CONFIG=:4096:8`（训练入口会在新进程自动设置；若CUDA已初始化而配置缺失则拒绝）。恢复身份还校验PyTorch/CUDA版本、GPU和计算设置。源码与HEAD也必须保持一致，验证恢复期间不要修改源码或提交新版本；旧源码检查点可以作为 `--adapter` 开启新任务，不能伪装为同一优化器任务恢复。每步metrics另含更新墙钟、输入token吞吐和CUDA峰值分配/预留显存，这些不包含模型加载、保存检查点或独立教师进程。
 
 ## 评测与报告
 

@@ -28,9 +28,9 @@ python -m mirrorforce.distill.experiment --config ../configs/distill-autodl.exam
 
 每条样本包含 schema、game_id、deal_seed、deck_id、split、viewer、view、history、teacher_logits、chosen、teacher_identity、obs_sha256、student_version、latency_ms。教师不接触真实对手隐藏状态；导出器对未知卡再次屏蔽身份与数值。当前使用客户端重建盘面、公开连锁、关系和近期本方决策历史，不提供自然语言思维链。
 
-动作标记为 `<|action_000|>` 至 `<|action_191|>`。Qwen 原词表保持冻结，新增 192 行共享输入/输出向量，和注意力 LoRA 一起更新。使用 Qwen 最后一层隐藏表示对动作向量打分；这是受约束的动作解码器，不是全词表自由文本生成。菜单中的动作标记也使用相同可训练向量。适配器目录包含 LoRA、actions.pt、tokenizer 和 student.json，缺少任何部分都不能视为完整学生。
+动作标记为 `<|action_000|>` 至 `<|action_191|>`。学生采用标准 Qwen 因果语言模型及其 lm_head；SFT 在完整词表上监督唯一动作 token，软蒸馏在当前合法动作 token 集合内计算教师到学生的 KL。推理只允许生成一个合法动作 token，也可直接取同一 lm_head 的合法动作 logits；两条路径已经做一致性验证。原有词表行冻结，新增动作对应的输入/输出行与注意力 LoRA 一起更新；输入输出是否共享取决于底座，代码同时支持两种情况。Qwen 的未分配补齐行可以用于新 token，无须缩减原权重矩阵。适配器目录包含 LoRA 的 safetensors、action_rows.safetensors、tokenizer 和 student.json，缺少任何部分都不能视为完整学生；恢复优化器还需要 training.pt。
 
-卡牌文本去重为按 code 索引的字典。上下文超过 4096 token 时只移除最旧的历史条目；盘面、卡牌文本和完整菜单仍超限则报错。不得为了提高成功率静默截掉合法动作。
+输入采用 semantic_table_json/v3 可逆语义表和共享文本池，完整卡牌效果与动作菜单保留。用户已批准上下文可配置，正式对局使用 16384，训练与采样命令均应明确传入 `--context-limit 16384`，检查点保存该配置。超过上限时只移除最旧的公开历史；盘面、卡牌文本和完整菜单仍超限则报错。不得为了提高成功率静默截掉合法动作。16384 推理通过不等于同长度训练已经通过，须分别测量。
 
 固定种子区间：训练 100000～109999，验证 200000～200999，测试 300000～300999。同一发牌的两次先后手属于同一划分。评测交换双方座位时也交换各自预定牌序；引擎后续随机事件仍可能因动作分叉不同，不能宣称全程随机过程相同。
 
@@ -52,7 +52,7 @@ python -m mirrorforce.distill.train --data /path/runs/demo/samples.jsonl \
   --resume /path/runs/sft/step-000050
 ```
 
-学生在线采样给 collect 增加 `--student --adapter /path/checkpoint`。测试使用 seed 300000、pairs 50。所有输出目录必须是新目录，已有实验不会被覆盖。training.pt 使用 PyTorch pickle 保存优化器，只恢复自己生成且可信的文件。
+学生在线采样给 collect 增加 `--student --adapter /path/checkpoint --context-limit 16384`。独立测试还必须加 `--independent-student --selection greedy`，使用 seed 300000、pairs 50。独立模式下学生客户端从引擎重建本方可见观察，由 Qwen 选择所有非强制动作；单一合法动作按协议直接执行。教师仅作为对手运行，学生端 teacher_queries 必须为零。在线蒸馏模式的动作同样由学生选择，教师查询只产生监督并同步记忆，不允许接管。所有输出目录必须是新目录，已有实验不会被覆盖。training.pt 使用 PyTorch pickle 保存优化器，只恢复自己生成且可信的文件。
 
 三个对照从同一 SFT 检查点开始：继续 SFT、固定数据软蒸馏、学生在线数据软蒸馏。三条分支均执行三轮，均每轮重新初始化优化器；在线轮次必须使用上一轮学生重新采样。KL 方向固定为教师到学生，温度 1，动作集合以合法菜单为准。
 

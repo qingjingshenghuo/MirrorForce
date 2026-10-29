@@ -3,8 +3,33 @@ import argparse
 import json
 import random
 import hashlib
+import os
+import time
 from pathlib import Path
 from .data import read_rows
+
+
+def configure_reproducibility(device):
+    """固定同一运行环境的计算路径，避免只有随机种子相同但梯度漂移。"""
+    import torch
+    cuda = str(device).startswith("cuda")
+    if cuda:
+        workspace = os.environ.get("CUBLAS_WORKSPACE_CONFIG")
+        if torch.cuda.is_initialized() and workspace not in (":4096:8", ":16:8"):
+            raise RuntimeError("CUDA已初始化但未配置确定性cuBLAS工作区，请在新进程训练")
+        if workspace is not None and workspace not in (":4096:8", ":16:8"):
+            raise ValueError("训练要求CUBLAS_WORKSPACE_CONFIG为:4096:8或:16:8")
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    torch.use_deterministic_algorithms(True)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    return {"torch": str(torch.__version__), "cuda": torch.version.cuda, "device": str(device),
+            "deterministic_algorithms": True, "tf32": False,
+            "cublas_workspace": os.environ.get("CUBLAS_WORKSPACE_CONFIG") if cuda else None,
+            "gpu": torch.cuda.get_device_name(device) if cuda else None,
+            "capability": list(torch.cuda.get_device_capability(device)) if cuda else None}
 
 
 def exact_token_sampler(lengths, quota):
@@ -72,6 +97,7 @@ def main(argv=None):
         p.error("参数冲突或预算不是正数")
     import torch
     import numpy as np
+    runtime_identity = configure_reproducibility(a.device)
     np.random.seed(a.seed)
     from .student import Student
     from .data import prompt_text, digest, SERIALIZER_VERSION
@@ -95,7 +121,8 @@ def main(argv=None):
                 "lr": a.lr, "seed": a.seed, "tokens_per_update": a.tokens_per_update,
                 "base": student.base, "revision": student.revision, "action_ids": student.ids,
                 "context_limit": student.context_limit,
-                "loss_version": "standard_lm_full_vocab_sft_legal_kd/v2"}
+                "loss_version": "standard_lm_full_vocab_sft_legal_kd/v2",
+                "runtime": runtime_identity}
     if a.resume:
         state = torch.load(Path(a.resume) / "training.pt", map_location="cpu", weights_only=False)
         if state["identity"] != identity:
@@ -138,6 +165,10 @@ def main(argv=None):
                 step -= 1
                 break
             optimizer.zero_grad(set_to_none=True)
+            if str(a.device).startswith("cuda"):
+                torch.cuda.synchronize()
+                torch.cuda.reset_peak_memory_stats()
+            begun = time.monotonic()
             total = 0.
             for i in indexes:
                 scores, _ = student.logits([rows[i]])
@@ -148,11 +179,17 @@ def main(argv=None):
                 total += loss.item()
             torch.nn.utils.clip_grad_norm_(student.parameters(), 1.)
             optimizer.step()
+            if str(a.device).startswith("cuda"):
+                torch.cuda.synchronize()
+            seconds = time.monotonic() - begun
             tokens += needed
             for index in indexes:
                 sample_counts[index] += 1
             metric = {"step": step, "loss": total, "effective_tokens": tokens,
-                      "update_decisions": len(indexes)}
+                      "update_decisions": len(indexes), "update_seconds": seconds,
+                      "input_tokens_per_second": needed / seconds,
+                      "cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated() if str(a.device).startswith("cuda") else None,
+                      "cuda_peak_reserved_bytes": torch.cuda.max_memory_reserved() if str(a.device).startswith("cuda") else None}
             log.write(json.dumps(metric) + "\n")
             log.flush()
             print(json.dumps(metric), flush=True)

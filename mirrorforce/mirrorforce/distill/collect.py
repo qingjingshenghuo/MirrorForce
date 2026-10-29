@@ -1,10 +1,18 @@
 """整局采样及固定发牌评测；失败局不进入训练数据。"""
 import argparse
 import json
+import math
 import tempfile
 from pathlib import Path
 from .data import CardTexts, digest, split_for
 from .policy import DistillPolicy
+
+
+def validate_cost_mode(local, hourly_yuan, budget_yuan):
+    if not all(math.isfinite(x) for x in (hourly_yuan, budget_yuan)):
+        raise ValueError("单价与预算必须是有限数值")
+    if (local and (hourly_yuan != 0 or budget_yuan != 0)) or (not local and min(hourly_yuan, budget_yuan) <= 0):
+        raise ValueError("本机模式必须明确使用0单价和0云预算；云端模式必须为正值")
 
 
 def content_identity(path):
@@ -46,9 +54,14 @@ def main(argv=None):
     p.add_argument("--game-seconds", type=float, default=1800)
     p.add_argument("--hourly-yuan", type=float, required=True)
     p.add_argument("--budget-yuan", type=float, default=50)
+    p.add_argument("--local", action="store_true", help="本机免费验证模式，单价和云端预算必须均为0")
     a = p.parse_args(argv)
-    if a.adapter and not a.student or a.independent_student and not a.student or min(a.pairs, a.max_samples, a.game_seconds, a.hourly_yuan, a.budget_yuan, a.temperature) <= 0:
+    if a.adapter and not a.student or a.independent_student and not a.student or min(a.pairs, a.max_samples, a.game_seconds, a.temperature) <= 0:
         p.error("无效采样配置")
+    try:
+        validate_cost_mode(a.local, a.hourly_yuan, a.budget_yuan)
+    except ValueError as exc:
+        p.error(str(exc))
     split = split_for(a.seed)
     if split_for(a.seed + a.pairs - 1) != split:
         p.error("种子区间跨越数据划分")
@@ -180,7 +193,7 @@ def main(argv=None):
     from .evaluate import summarize
     report = summarize(results, planned_games=a.pairs * 2)
     report.update(samples=count, stop=stop, estimated_yuan=(time.monotonic() - started) / 3600 * a.hourly_yuan,
-                  cost_note="仅本次进程耗时估算，不含实例空闲和存储，最终以账单为准")
+                  cost_note="本机验证，不计云端费用" if a.local else "仅本次进程耗时估算，不含实例空闲和存储，最终以账单为准")
     (a.out / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

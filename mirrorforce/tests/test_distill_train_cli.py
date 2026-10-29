@@ -34,6 +34,9 @@ def test_train_entry_resume_matches_continuous(monkeypatch, tiny_base, tmp_path)
     assert torch.allclose(a.logits(rows)[0], b.logits(rows)[0], atol=1e-6)
     state = torch.load(tmp_path / "resumed" / "step-000002" / "training.pt", weights_only=False)
     assert state["step"] == 2 and state["tokens"] == 6
+    assert state["identity"]["runtime"]["deterministic_algorithms"]
+    metrics = [json.loads(line) for line in (tmp_path / "resumed" / "metrics.jsonl").read_text().splitlines()]
+    assert metrics[0]["update_seconds"] > 0 and metrics[0]["input_tokens_per_second"] > 0
     # 修改数据内容即使样本数相同，也必须拒绝恢复。
     source.write_text("changed")
     with pytest.raises(ValueError, match="恢复"):

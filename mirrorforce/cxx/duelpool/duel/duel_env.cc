@@ -732,6 +732,24 @@ py::object Prompt(duelenv::ScriptedDuel &duel) {
     row["place"] = static_cast<int>(a.place_);
     row["attribute"] = static_cast<int>(a.attribute_);
     row["spec"] = a.spec_;
+    // 仅导出当前合法动作自身的精确值，不读取任何隐藏引擎布局。
+    row["response"] = a.response_;
+    row["option_desc"] = a.option_desc_;
+    row["option_code"] = a.option_code_;
+    row["option_index"] = a.option_;
+    row["exact_semantics_version"] = 1;
+    const auto code = a.cid_ == 0 ? 0u : codes.at(a.cid_);
+    if (a.act_ == duelenv::ActionAct::Activate && a.effect_ >= 0) {
+      uint32_t description = static_cast<uint32_t>(a.effect_);
+      if (a.option_ >= 0) {
+        description = a.option_desc_;
+      } else if (a.effect_ >= duelenv::CARD_EFFECT_OFFSET) {
+        description = (code << 4) | static_cast<uint32_t>(a.effect_ - duelenv::CARD_EFFECT_OFFSET);
+      }
+      row["description_code"] = description;
+    } else {
+      row["description_code"] = py::none();
+    }
     rows.append(row);
   }
   return py::make_tuple(duel.player(), duel.prompt_msg(), rows);

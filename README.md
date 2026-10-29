@@ -1,5 +1,17 @@
 # MirrorForce
 
+## 本 fork：Qwen 动作决策后训练
+
+本 fork 基于 [上游 MirrorForce](https://github.com/tommy85/MirrorForce)，新增客户端可见输入、Qwen 标准语言模型动作输出、SFT 与动作级在线策略蒸馏的开发工作。原游戏引擎、冠军教师及下述上游成果归原项目贡献者；本扩展不将其表述为个人从零实现。
+
+- 开发与验收要求：[LLM 后训练开发规范](LLM后训练开发规范.md)。
+- 运行参考：[实施与实验手册](docs/LLM在线蒸馏实施与实验手册.md)。该手册含旧动作头实现的历史说明；发生冲突时以开发规范与当前测试为准。
+- 结果记录：[实验报告模板](docs/LLM实验报告模板.md)。模板中的待填写项不是实际训练结果。
+
+当前研究范围是闪刀姬镜像中的动作级蒸馏，不代表已取得通用游戏王能力或已完成真实奖励 RL。完整训练与胜率结论需由实际检查点和评测记录证明。
+
+以下保留上游项目介绍与来源信息。
+
 MirrorForce is a Yu-Gi-Oh! OCG agent trained by self-play reinforcement learning on the YGOPro rules engine, named
 after the trap card *Mirror Force*.
 

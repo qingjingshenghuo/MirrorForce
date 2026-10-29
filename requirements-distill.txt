@@ -1,0 +1,7 @@
+# 学生环境与原 JAX 教师环境分开安装；先安装匹配云端驱动的 PyTorch。
+torch==2.5.1
+transformers==4.46.3
+peft==0.13.2
+accelerate==1.1.1
+safetensors>=0.4
+pytest>=8,<9

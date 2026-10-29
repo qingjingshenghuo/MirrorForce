@@ -1,0 +1,28 @@
+{
+  "python": "/root/autodl-tmp/mirrorforce/student-env/bin/python",
+  "cwd": "/root/autodl-tmp/mirrorforce/repo/mirrorforce",
+  "out": "/root/autodl-tmp/mirrorforce/runs/distill-001",
+  "teacher_socket": "/tmp/mirrorforce-distill.sock",
+  "teacher_command": [
+    "bash", "/root/autodl-tmp/mirrorforce/repo/local-tools/distill-teacher.sh",
+    "/root/autodl-tmp/mirrorforce/repo",
+    "/root/autodl-tmp/mirrorforce/assets",
+    "/root/autodl-tmp/mirrorforce/build",
+    "/root/autodl-tmp/mirrorforce/teacher-env/bin/python",
+    "/tmp/mirrorforce-distill.sock",
+    "/root/autodl-tmp/mirrorforce/runs/teacher-logs"
+  ],
+  "deck": "/root/autodl-tmp/mirrorforce/assets/decks/SkyStriker.ydk",
+  "cards_db": "/root/autodl-tmp/mirrorforce/assets/cards.cdb",
+  "script_root": "/root/autodl-tmp/mirrorforce/assets",
+  "native": "/root/autodl-tmp/mirrorforce/build/duel_native.cpython-311-x86_64-linux-gnu.so",
+  "hourly_yuan": 0,
+  "budget_yuan": 450,
+  "steps": 200,
+  "context_limit": 16384,
+  "tokens_per_update": 16384,
+  "token_budget": 2000000,
+  "data_pairs": 50,
+  "online_pairs": 10,
+  "eval_pairs": 50
+}

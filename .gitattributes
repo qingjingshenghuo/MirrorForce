@@ -1,0 +1,5 @@
+# 源码默认LF，确保Windows检出后Linux脚本仍可直接运行。
+* text=auto eol=lf
+# Windows 启动脚本使用原生换行，避免 CMD 错误拆行。
+local-tools/*.cmd text eol=crlf
+local-tools/*.ps1 text eol=crlf

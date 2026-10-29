@@ -903,15 +903,34 @@ class Service:
     def commit(self, request):
         """Step the pending decision with ``index``; the response bytes, or the next sub-decision scored and pending."""
         session = self.sessions[request["session"]]
-        pending, index = session.pending, int(request["index"])
+        pending, index = session.pending, request["index"]
+        if type(index) is not int:
+            raise ValueError("动作索引必须是整数，不能隐式转换")
         if pending is None or not 0 <= index < pending["rows"]:
             raise RuntimeError("no pending decision, or a row outside its menu")
+        if "obs_sha256" in request:
+            from mirrorforce.distill.data import digest
+            if request["obs_sha256"] != pending["obs_sha256"] or request.get("menu_sha256") != digest(session.client.prompt()[2]):
+                raise ValueError("提交的观察或菜单已过期")
         session.pending = None
         session.decisions += 1
         out = session.client.step(index)
         if out is not None:
             return {"response": bytes(out).hex()}
         return {"pending": self._public(self._score([session])[0])}
+
+    @session_transaction
+    def distill_view(self, request):
+        """读取当前客户端菜单，绑定已评分观察，不读取真实引擎。"""
+        from mirrorforce.distill.data import public_view, digest
+        session = self.sessions[request["session"]]
+        if session.pending is None or request.get("obs_sha256") != session.pending["obs_sha256"]:
+            raise ValueError("蒸馏请求的观察已过期")
+        player, msg, rows = session.client.prompt()
+        if len(rows) != session.pending["rows"]:
+            raise ValueError("蒸馏菜单与教师评分不一致")
+        return {"obs_sha256": session.pending["obs_sha256"], "msg": int(msg), "menu_sha256": digest(rows),
+                "view": public_view(session.client, rows)}
 
     @session_transaction
     def clone(self, request):
@@ -1157,7 +1176,7 @@ class Service:
             if op == "identity":
                 return self.identity
             if op in ("open", "open_stream", "decide", "close", "prompt", "commit", "clone", "rollout_step", "root_step",
-                      "public_world", "public_belief", "ar_proposals", "open_root_view", "current_public_root_seed"):
+                      "public_world", "public_belief", "ar_proposals", "open_root_view", "current_public_root_seed", "distill_view"):
                 return getattr(self, op)(request)
             raise ValueError(f"unknown op {op!r}")
         finally:

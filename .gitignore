@@ -4,3 +4,8 @@ __pycache__/
 *.so
 *.ckpt
 build-out/
+
+# 本机下载的权重、卡片数据和运行产物
+local-resources/
+local-build/
+local-runs/

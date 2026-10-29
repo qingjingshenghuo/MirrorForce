@@ -44,7 +44,8 @@ def service_identity(socket_path, timeout):
         sock.close()
 
 
-def play_game(core, cards, recipe, deal_seed, a_first, sockets, identities, *, max_seconds):
+def play_game(core, cards, recipe, deal_seed, a_first, sockets, identities, *, max_seconds,
+              policy_factory=None, preserve_role_deals=False):
     """One game; returns its row. Errors are recorded in the row, never raised."""
     from mirrorforce.netduel import constants as C
     from mirrorforce.netduel import protocol as P
@@ -55,8 +56,12 @@ def play_game(core, cards, recipe, deal_seed, a_first, sockets, identities, *, m
     from tools.mf_runtime_client_parity import mirror_deal
 
     deal = dict(mirror_deal(recipe, deal_seed), max_options=192)
+    if preserve_role_deals and not a_first:
+        deal["deck_orders"] = list(reversed(deal["deck_orders"]))
+        deal["extra"] = list(reversed(deal["extra"]))
     seats = {"a": 0 if a_first else 1, "b": 1 if a_first else 0}
-    policies = {role: RemotePolicy("unix:" + str(sockets[role]), identities[role], seed=seats[role]) for role in ROLES}
+    factory = policy_factory or (lambda role, seat: RemotePolicy("unix:" + str(sockets[role]), identities[role], seed=seat))
+    policies = {role: factory(role, seats[role]) for role in ROLES}
     clients = [None, None]
     for role, seat in seats.items():
         clients[seat] = NetDuelClient(host="local", port=0, name=role, main=list(recipe.main), extra=list(recipe.extra),
@@ -70,6 +75,10 @@ def play_game(core, cards, recipe, deal_seed, a_first, sockets, identities, *, m
         winner = host.winner
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"[:500]
+    finally:
+        for role, seat in seats.items():
+            if policies[role].active:
+                policies[role].on_duel_end(clients[seat].result)
     results = {role: clients[seat].result for role, seat in seats.items()}
     reports = {role: policies[role].report() for role in ROLES}
     if not error:

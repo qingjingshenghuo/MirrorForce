@@ -74,8 +74,8 @@ def main(argv=None):
     import numpy as np
     np.random.seed(a.seed)
     from .student import Student
-    from .data import prompt_text
-    from .stages import source_identity
+    from .data import prompt_text, digest, SERIALIZER_VERSION
+    from .stages import source_identity, file_hash
     rows = read_rows(a.data)
     if not rows:
         raise ValueError("没有训练样本")
@@ -86,7 +86,12 @@ def main(argv=None):
     optimizer = torch.optim.AdamW(student.optimizer_groups(a.lr), lr=a.lr)
     rng, start, tokens = random.Random(a.seed), 0, 0
     sample_counts = [0] * len(rows)
+    source = source_identity()
+    base_manifest = Path(student.base) / "download-manifest.json"
     identity = {"data_sha": data_sha, "objective": a.objective, "accumulate": a.accumulate,
+                "source": source, "serializer_version": SERIALIZER_VERSION,
+                "tokenizer_sha256": digest(student.tokenizer.get_vocab()),
+                "base_manifest_sha256": file_hash(base_manifest) if base_manifest.is_file() else None,
                 "lr": a.lr, "seed": a.seed, "tokens_per_update": a.tokens_per_update,
                 "base": student.base, "revision": student.revision, "action_ids": student.ids,
                 "context_limit": student.context_limit,
@@ -106,7 +111,7 @@ def main(argv=None):
         if a.steps < start or a.token_budget < tokens:
             raise ValueError("恢复预算小于检查点已完成的更新或 token 数")
     a.out.mkdir(parents=True, exist_ok=False)
-    (a.out / "run.json").write_text(json.dumps({**vars(a), **identity, **source_identity()}, default=str, indent=2), encoding="utf-8")
+    (a.out / "run.json").write_text(json.dumps({**vars(a), **identity, **source}, default=str, indent=2), encoding="utf-8")
 
     def save(step):
         path = a.out / f"step-{step:06d}"

@@ -3,7 +3,26 @@ import argparse
 import copy
 import json
 import random
-from .data import read_rows, probabilities, TOKENS
+from .data import read_rows, probabilities, TOKENS, digest
+
+
+def permute_menu(row, order):
+    """仅做离线鲁棒性评测；返回新菜单及其同步监督，不执行虚拟索引。"""
+    n = len(row["legal_actions"])
+    if sorted(order) != list(range(n)) or any(type(i) is not int for i in order):
+        raise ValueError("动作置换必须是完整整数排列")
+    changed = copy.deepcopy(row)
+    changed["legal_actions"] = [{**row["legal_actions"][old], "token": TOKENS[new]}
+                                for new, old in enumerate(order)]
+    if row.get("view") is not None:
+        changed["view"]["actions"] = [row["view"]["actions"][i] for i in order]
+        changed["menu_sha256"] = digest(changed["view"]["actions"])
+    changed["teacher_logits"] = [row["teacher_logits"][i] for i in order]
+    changed["action_mapping"] = [{"token": TOKENS[i], "native_index": i} for i in range(n)]
+    if "chosen_index" in row:
+        chosen = order.index(row["chosen_index"])
+        changed.update(chosen=chosen, chosen_index=chosen, chosen_token=TOKENS[chosen])
+    return changed
 
 
 def main(argv=None):
@@ -30,12 +49,7 @@ def main(argv=None):
             agree += chosen == max(range(n), key=row["teacher_logits"].__getitem__)
             order = list(range(n))
             rng.shuffle(order)
-            changed = copy.deepcopy(row)
-            changed["view"]["actions"] = [row["view"]["actions"][i] for i in order]
-            if "legal_actions" in row:
-                changed["legal_actions"] = [{**row["legal_actions"][old], "token": TOKENS[new],
-                    "native_index": new} for new, old in enumerate(order)]
-            changed["teacher_logits"] = [row["teacher_logits"][i] for i in order]
+            changed = permute_menu(row, order)
             stable += order[student(changed)] == chosen
     print(json.dumps({"samples": len(rows), "teacher_kl": kl / len(rows),
         "teacher_agreement": agree / len(rows), "menu_permutation_agreement": stable / len(rows)}, indent=2))

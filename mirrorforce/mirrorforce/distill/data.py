@@ -401,7 +401,7 @@ def build_sample(view, history, metadata, teacher_logits, chosen, behavior=None)
             "teacher_logits": list(teacher_logits), "chosen": chosen, "chosen_index": chosen, "chosen_token": TOKENS[chosen],
             "behavior_logprob": behavior.get("behavior_logprob"), "selection": behavior.get("selection", "greedy"),
             "temperature": behavior.get("temperature", 1.),
-            **{k: behavior.get(k, 0) for k in ("teacher_ms", "student_ms", "serialization_ms", "input_tokens")},
+            **{k: behavior.get(k) for k in ("teacher_ms", "student_ms", "serialization_ms", "input_tokens")},
             "completed": False, "training_eligible": False, "episode_result": None}
 
 

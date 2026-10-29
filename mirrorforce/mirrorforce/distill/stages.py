@@ -20,7 +20,7 @@ def source_identity():
     digest = hashlib.sha256()
     for name in sorted(set(n for n in names if n)):
         path = root / name.decode("utf-8")
-        if not path.is_file() or path.suffix not in (".py", ".cc", ".h", ".json", ".txt", ".sh"):
+        if not path.is_file() or path.suffix.lower() not in (".py", ".cc", ".cpp", ".c", ".h", ".hpp", ".json", ".txt", ".sh", ".ps1", ".cmd", ".toml", ".yaml", ".yml"):
             continue
         digest.update(name + b"\0" + file_hash(path).encode())
     return {"source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(),
@@ -28,10 +28,10 @@ def source_identity():
 
 
 class StageLedger:
-    def __init__(self, root, config, resume=False):
+    def __init__(self, root, config, resume=False, runtime_identity=None):
         self.root = Path(root)
         self.path = self.root / "stages.json"
-        self.config_sha = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+        self.config_sha = hashlib.sha256(json.dumps({"config": config, "runtime": runtime_identity or {}}, sort_keys=True).encode()).hexdigest()
         if resume:
             self.state = json.loads(self.path.read_text(encoding="utf-8"))
             if self.state["config_sha"] != self.config_sha:

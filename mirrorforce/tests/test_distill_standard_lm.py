@@ -134,6 +134,15 @@ def test_context_limit_is_bounded_and_persisted(tiny_base, tmp_path):
     assert Student(adapter=path, device="cpu").context_limit == 256
 
 
+def test_greedy_refuses_nonfinite_legal_logits(monkeypatch, tiny_base):
+    student = setup(monkeypatch, tiny_base)
+    scores = torch.zeros(1, student.model.config.vocab_size)
+    scores[0, student.ids[0]] = float("nan")
+    monkeypatch.setattr(student, "logits", lambda rows: (scores, 3))
+    with pytest.raises(ValueError, match="非有限"):
+        student.select(sample(), selection="greedy")
+
+
 def test_eos_and_ordinary_tokens_cannot_escape_constraint(monkeypatch, tiny_base):
     student = setup(monkeypatch, tiny_base)
 

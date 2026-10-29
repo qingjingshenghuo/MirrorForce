@@ -21,3 +21,9 @@ def test_resume_refuses_config_change_and_running_not_complete(tmp_path):
     assert not ledger.reusable("train", ["train"])
     with pytest.raises(ValueError, match="配置"):
         StageLedger(tmp_path, {"seed": 43}, True)
+
+
+def test_resume_refuses_external_resource_identity_change(tmp_path):
+    StageLedger(tmp_path, {"seed": 42}, runtime_identity={"native": "old"})
+    with pytest.raises(ValueError, match="配置"):
+        StageLedger(tmp_path, {"seed": 42}, True, runtime_identity={"native": "changed"})

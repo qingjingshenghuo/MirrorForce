@@ -53,7 +53,7 @@ class DistillPolicy(RemotePolicy):
                 'viewer': self.seat, 'teacher_identity': digest(self.expected_identity), 'obs_sha256': obs_sha}
         row = build_sample(view, self.history, meta, logits, 0,
             behavior={'selection': self.selection, 'temperature': self.temperature, 'behavior_logprob': 0.,
-                      'teacher_ms': self.teacher_ms, 'student_ms': 0., 'serialization_ms': 0., 'input_tokens': 0})
+                      'teacher_ms': self.teacher_ms, 'student_ms': 0., 'serialization_ms': None, 'input_tokens': None})
         row['serialization_ms'] = (time.perf_counter() - start) * 1000
         return row
 

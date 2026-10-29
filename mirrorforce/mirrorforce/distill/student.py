@@ -124,6 +124,8 @@ class Student:
         with torch.no_grad():
             scores, _ = self.logits([row])
             legal = scores[0, self.ids[:action_count(row)]] / temperature
+            if not bool(torch.isfinite(legal).all()):
+                raise ValueError("学生动作分数非有限值，禁止静默执行")
             logp = legal.log_softmax(-1)
             if seed is not None:
                 generator = torch.Generator(device=self.device).manual_seed(seed)

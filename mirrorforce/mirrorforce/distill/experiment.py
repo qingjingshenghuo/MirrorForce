@@ -7,7 +7,7 @@ import subprocess
 import time
 
 
-def main(argv=None):
+def _main(argv, stack):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--config", type=Path, required=True)
     p.add_argument("--dry-run", action="store_true")
@@ -35,12 +35,23 @@ def main(argv=None):
                           "teacher_command": cfg["teacher_command"]}, ensure_ascii=False, indent=2))
         return
     root.mkdir(parents=True, exist_ok=a.resume)
-    from .stages import StageLedger
-    stage_ledger = StageLedger(root, cfg, a.resume)
+    from .costs import ExperimentLock, CostJournal
+    run_lock = stack.enter_context(ExperimentLock(root))
+    cost_journal = CostJournal(root, rate)
+    cost_journal.recover()
+    from .stages import StageLedger, source_identity, file_hash
+    resources = {key: file_hash(cfg[key]) for key in ("deck", "cards_db", "native")}
+    script_root = Path(cfg["script_root"])
+    for item in sorted(script_root.rglob("*")):
+        if item.is_file() and ("script" in item.relative_to(script_root).parts or item.suffix in (".json", ".npz", ".txt", ".ckpt")):
+            resources[str(item.resolve())] = file_hash(item)
+    for arg in cfg["teacher_command"]:
+        if Path(arg).is_file():
+            resources[str(Path(arg).resolve())] = file_hash(arg)
+    stage_ledger = StageLedger(root, cfg, a.resume, {"source": source_identity(), "resources": resources})
     (root / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     start = time.monotonic()
-    ledger = json.loads((root / "costs.json").read_text()) if a.resume and (root / "costs.json").exists() else []
-    spent = sum(item["estimated_yuan"] for item in ledger)
+    spent = cost_journal.spent
     deadline = start + (cap - spent) / rate * 3600
     env = dict(os.environ, XLA_PYTHON_CLIENT_PREALLOCATE="false")
 
@@ -78,15 +89,18 @@ def main(argv=None):
                         idx = command.index("--adapter")
                         del command[idx:idx + 2]
                     command += ["--resume", str(checkpoints[-1].parent)]
-        stage_ledger.mark(name, identity_command, "running")
+        remaining()
+        attempt_id = cost_journal.begin(name)
         begun, svc = time.monotonic(), None
         status = "failed"
         try:
+            stage_ledger.mark(name, identity_command, "running")
             if teacher:
                 if socket.exists():
                     raise ValueError("教师 socket 已存在；请使用独立路径，避免接入未知进程")
                 svc_log = (root / f"{name}-teacher.log").open("w")
-                svc = subprocess.Popen(cfg["teacher_command"], cwd=cwd, env=env, stdout=svc_log, stderr=subprocess.STDOUT)
+                svc = subprocess.Popen(cfg["teacher_command"], cwd=cwd, env=env, stdout=svc_log, stderr=subprocess.STDOUT,
+                                       pass_fds=(run_lock.fileno,))
                 from tools.mf_runtime_local_match import service_identity
                 while True:
                     remaining()
@@ -104,7 +118,7 @@ def main(argv=None):
                     command = list(command)
                     command[command.index("--budget-yuan") + 1] = str(remaining() / 3600 * rate)
                 subprocess.run(command, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT,
-                               check=True, timeout=remaining())
+                               check=True, timeout=remaining(), pass_fds=(run_lock.fileno,))
             status = "ok"
         finally:
             if svc is not None:
@@ -118,14 +132,21 @@ def main(argv=None):
                 # 只移除本轮启动服务所占用的 Unix socket。
                 if socket.is_socket():
                     socket.unlink()
-            ledger.append({"stage": name, "status": status, "seconds": time.monotonic() - begun,
-                           "estimated_yuan": (time.monotonic() - begun) / 3600 * rate})
-            (root / "costs.json").write_text(json.dumps(ledger, indent=2), encoding="utf-8")
+            cost_journal.settle(attempt_id, status)
+            if name == "final-report" and (root / "experiment-summary.json").is_file():
+                from .costs import atomic_json
+                summary_path = root / "experiment-summary.json"
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                summary["costs"] = cost_journal.ledger
+                summary["cost_snapshot_includes_report_stage"] = True
+                atomic_json(summary_path, summary)
             artifacts = []
             if status == "ok":
                 artifacts = [root / f"{name}.log"]
                 if output.is_dir():
                     artifacts.extend(p for p in output.rglob("*") if p.is_file())
+                if name == "final-report":
+                    artifacts.extend([root / "experiment-summary.json", root / "variants.json"])
             stage_ledger.mark(name, identity_command, status, artifacts)
 
     def collect(name, seed, pairs, limit, adapter=None):
@@ -147,6 +168,8 @@ def main(argv=None):
     def train(name, data, objective, adapter=None):
         command = py + ["mirrorforce.distill.train", "--data", str(data), "--out", str(root / name),
                         "--objective", objective, "--steps", str(cfg.get("steps", 200)),
+                        "--base", cfg.get("base", "Qwen/Qwen2.5-1.5B-Instruct"),
+                        "--revision", cfg.get("revision", "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"),
                         "--context-limit", str(cfg.get("context_limit", 16384)),
                         "--tokens-per-update", str(cfg.get("tokens_per_update", 16384)),
                         "--token-budget", str(cfg.get("token_budget", 2000000))]
@@ -176,6 +199,13 @@ def main(argv=None):
         collect(f"eval-{name}", 300000, cfg.get("eval_pairs", 50), 100000, adapter)
         run(f"audit-{name}", py + ["mirrorforce.distill.audit", "--data", str(validation), "--adapter", adapter])
     (root / "variants.json").write_text(json.dumps(variants, indent=2), encoding="utf-8")
+    run("final-report", py + ["mirrorforce.distill.report", "--root", str(root)])
+
+
+def main(argv=None):
+    from contextlib import ExitStack
+    with ExitStack() as stack:
+        return _main(argv, stack)
 
 
 if __name__ == "__main__":

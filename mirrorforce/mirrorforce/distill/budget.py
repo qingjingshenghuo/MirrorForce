@@ -15,4 +15,4 @@ class Budget:
 
     @staticmethod
     def is_evaluation(name):
-        return name.startswith(("eval-", "audit-"))
+        return name.startswith(("eval-", "audit-")) or name == "final-report"

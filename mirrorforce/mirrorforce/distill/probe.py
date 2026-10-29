@@ -33,7 +33,7 @@ def main(argv=None):
             _, ids, stats = prompt_details(rows[index], student.tokenizer, a.context_limit)
             result = student.select(rows[index], "greedy")
             generated = student.generate_action(rows[index])
-            if generated != result["index"] or not math.isfinite(result["logprob"]):
+            if generated != result["index"] or not all(math.isfinite(result[key]) for key in ("logprob", "policy_logprob")):
                 raise ValueError("标准生成与forward不一致或概率异常")
             results.append({"sample": index, "input_tokens": len(ids), **stats, **result,
                             "seconds": time.monotonic()-begun, "error": None})

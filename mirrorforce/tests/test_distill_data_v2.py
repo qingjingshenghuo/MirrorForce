@@ -54,6 +54,15 @@ def test_named_menu_preserves_full_input_and_only_visible_names():
     assert '私密教师身份' not in text
 
 
+def test_compact_encoding_matches_previous_version_golden():
+    import hashlib
+    from mirrorforce.distill.data import compact_input, model_input
+    # 摘要由优化前的编码器生成；性能调整不能静默改变模型输入。
+    encoded = json.dumps(compact_input(model_input(sample())), ensure_ascii=False,
+                         sort_keys=True, separators=(',', ':')).encode()
+    assert hashlib.sha256(encoded).hexdigest() == 'b86d9e7d9d9adf9f8228b7f77009d2fac608de0eeaaafc6280089be015d3c9dc'
+
+
 def test_menu_augmentation_keeps_native_mapping_and_supervision():
     from mirrorforce.distill.augmentation import permute_training_menu
     from mirrorforce.distill.data import model_input

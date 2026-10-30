@@ -268,16 +268,18 @@ def compact_input(inputs):
                 columns = sorted({key for row in value for key in row})
                 if columns:
                     raw = [[encode(row[key]) if key in row else missing for key in columns] for row in value]
-                    defaults = []
+                    # 缓存规范字符串，并复用已编码单元格，避免嵌套表格反复递归编码。
+                    canonical = [[json.dumps(cell, sort_keys=True, ensure_ascii=False) for cell in row] for row in raw]
+                    defaults, default_keys = [], []
                     for col in range(len(columns)):
-                        frequencies = Counter(json.dumps(row[col], sort_keys=True, ensure_ascii=False) for row in raw)
+                        frequencies = Counter(row[col] for row in canonical)
                         selected = sorted(frequencies, key=lambda key: (-frequencies[key], key))[0]
                         defaults.append(json.loads(selected))
-                    same = lambda a, b: json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
-                    rows = [[part for index, cell in enumerate(row) if not same(cell, defaults[index]) for part in (index, cell)] for row in raw]
+                        default_keys.append(selected)
+                    rows = [[part for index, cell in enumerate(row) if canonical[r][index] != default_keys[index] for part in (index, cell)] for r, row in enumerate(raw)]
                     table = {"$table": {"columns": columns, "defaults": defaults, "rows": rows}}
                     dense = {"$table": {"columns": columns, "dense_rows": raw}}
-                    plain = [{key: encode(item) for key, item in sorted(row.items())} for row in value]
+                    plain = [{key: cells[col] for col, key in enumerate(columns) if key in original} for original, cells in zip(value, raw)]
                     # 小表格保留可读对象，避免表头比原文更大。
                     measure = lambda obj: len(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
                     return min((table, dense, plain), key=measure)

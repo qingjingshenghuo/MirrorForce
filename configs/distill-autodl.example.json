@@ -16,6 +16,8 @@
   "cards_db": "/root/autodl-tmp/mirrorforce/assets/cards.cdb",
   "script_root": "/root/autodl-tmp/mirrorforce/assets",
   "native": "/root/autodl-tmp/mirrorforce/build/duel_native.cpython-311-x86_64-linux-gnu.so",
+  "windbot_exe": "/root/autodl-tmp/mirrorforce/windbot/bin/Release/WindBot.exe",
+  "eval_seed": 300100,
   "hourly_yuan": 0,
   "budget_yuan": 450,
   "steps": 200,
@@ -24,6 +26,8 @@
   "context_limit": 16384,
   "tokens_per_update": 16384,
   "token_budget": 2000000,
+  "initial_sft": {"steps": 200, "token_budget": 2000000, "tokens_per_update": 131072, "save_every": 50, "keep_last": 2},
+  "branch_training": {"steps": 200, "token_budget": 2000000, "tokens_per_update": 131072, "save_every": 50, "keep_last": 2},
   "data_pairs": 50,
   "online_pairs": 10,
   "eval_pairs": 50

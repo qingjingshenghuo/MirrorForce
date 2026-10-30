@@ -1,0 +1,23 @@
+{
+  "games": 2,
+  "failures": 0,
+  "planned_games": 2,
+  "missing_games": 0,
+  "completion_rate": 1.0,
+  "completion_denominator": "planned",
+  "observed_completion_rate": 1.0,
+  "pure_win_rate": 0.0,
+  "wins": 0,
+  "draws": 0,
+  "losses": 2,
+  "complete_pairs": 1,
+  "paired_score": 0.0,
+  "paired_score_ci95": null,
+  "latency_p50_ms": 2385.4533039999524,
+  "latency_p95_ms": 3966.4610519999997,
+  "teacher_queries": 0,
+  "samples": 0,
+  "stop": "completed",
+  "estimated_yuan": 0.0,
+  "cost_note": "本机验证，不计云端费用"
+}

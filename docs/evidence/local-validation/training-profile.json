@@ -1,0 +1,89 @@
+{
+  "schema": "real_qwen_training_profile/v1",
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "runtime": {
+    "torch": "2.5.1+cu124",
+    "cuda": "12.4",
+    "device": "cuda",
+    "deterministic_algorithms": true,
+    "tf32": false,
+    "cublas_workspace": ":4096:8",
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "capability": [
+      8,
+      9
+    ]
+  },
+  "device_total_bytes": 8585216000,
+  "load_seconds": 65.10330259400007,
+  "context_limit": 16384,
+  "source": "/mnt/f/YGOagent/local-runs/champion-demonstrations-v3/episodes/30b8821a8023-100000-1.jsonl",
+  "saved_weights": false,
+  "results": [
+    {
+      "sample": 0,
+      "input_tokens": 3865,
+      "history_removed": 0,
+      "serialization_seconds": 0.0397949199998493,
+      "objective": "sft",
+      "repeat": 0,
+      "loss": 20.653728485107422,
+      "error": null,
+      "seconds": 4.0983106660000885,
+      "cuda_peak_allocated_bytes": 5097529856,
+      "cuda_peak_reserved_bytes": 6371147776
+    },
+    {
+      "sample": 0,
+      "input_tokens": 3865,
+      "history_removed": 0,
+      "serialization_seconds": 0.0397949199998493,
+      "objective": "sft",
+      "repeat": 1,
+      "loss": 18.966371536254883,
+      "error": null,
+      "seconds": 2.809783697000057,
+      "cuda_peak_allocated_bytes": 5600890880,
+      "cuda_peak_reserved_bytes": 6840909824
+    },
+    {
+      "sample": 0,
+      "input_tokens": 3865,
+      "history_removed": 0,
+      "serialization_seconds": 0.0397949199998493,
+      "objective": "kd",
+      "repeat": 0,
+      "loss": 0.9484550952911377,
+      "error": null,
+      "seconds": 2.780915696999955,
+      "cuda_peak_allocated_bytes": 5600890880,
+      "cuda_peak_reserved_bytes": 6840909824
+    },
+    {
+      "sample": 0,
+      "input_tokens": 3865,
+      "history_removed": 0,
+      "serialization_seconds": 0.0397949199998493,
+      "objective": "kd",
+      "repeat": 1,
+      "loss": 0.7725803852081299,
+      "error": null,
+      "seconds": 2.7762562660000185,
+      "cuda_peak_allocated_bytes": 5600890880,
+      "cuda_peak_reserved_bytes": 6840909824
+    },
+    {
+      "sample": 101,
+      "input_tokens": 16379,
+      "history_removed": 3,
+      "serialization_seconds": 1.2113558220000868,
+      "objective": "sft",
+      "repeat": 0,
+      "loss": 20.381742477416992,
+      "error": null,
+      "seconds": 249.88834730999997,
+      "cuda_peak_allocated_bytes": 8801172480,
+      "cuda_peak_reserved_bytes": 9758048256
+    }
+  ]
+}

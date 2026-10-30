@@ -106,16 +106,26 @@ class DistillPolicy(RemotePolicy):
                 if 'policy_logprob' in picked:
                     row['policy_logprob'] = picked['policy_logprob']
                 if self.chooser is not None and pending['rows'] > 1:
-                    from .data import prompt_details
-                    _, ids, info = prompt_details(row, self.chooser.tokenizer,
-                                                 limit=getattr(self.chooser, "context_limit", 4096))
-                    row['input_tokens'] = len(ids)
-                    row['history_removed'] = info['history_removed']
+                    if 'input_tokens' in picked:
+                        # 使用实际前向的计数，避免仅为统计再次编码整个长盘面。
+                        # 原始历史仍保留，删除数量可由离线审计重建。
+                        row['input_tokens'] = picked['input_tokens']
+                    else:
+                        from .data import prompt_details
+                        _, ids, info = prompt_details(row, self.chooser.tokenizer,
+                                                     limit=getattr(self.chooser, "context_limit", 4096))
+                        row['input_tokens'] = len(ids)
+                        row['history_removed'] = info['history_removed']
                 if pending['rows'] > 1 and not getattr(self, 'without_teacher', False):
                     self.samples.append(row)
                 self.history.append({'event': 'own_decision', 'turn': self._client.result.turns,
                                      'action': row['legal_actions'][index], 'subdecision': sub})
-                self.decisions.append({'forced': False, 'chosen': index, 'student_ms': elapsed})
+                self.decisions.append({'forced': pending['rows'] == 1, 'chosen': index, 'student_ms': elapsed,
+                    'selection': picked['selection'], 'legal_count': pending['rows'],
+                    'action_kind': row['legal_actions'][index].get('kind'),
+                    'turn': self._client.result.turns, 'phase': row.get('view', {}).get('phase'),
+                    'model_called': self.chooser is not None and pending['rows'] > 1,
+                    'input_tokens': row.get('input_tokens')})
                 reply = self._commit(pending, index, menu_sha)
             else:
                 raise ValueError('子选择数量超过上限')

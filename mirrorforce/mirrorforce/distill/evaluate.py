@@ -98,6 +98,12 @@ def main(argv=None):
     if a.baseline:
         fields = ("deck_sha256", "cards_db_sha256", "native_sha256", "teacher_identity", "pairing", "serializer_version", "selection", "context_limit")
         rm = manifest(a.baseline, required=True)
+        if lm.get('opponent_identity') != rm.get('opponent_identity'):
+            raise ValueError('评测对手身份不一致')
+        if lm.get('prompt_style', 'compact') != rm.get('prompt_style', 'compact'):
+            raise ValueError('评测提示模板不一致，必须重新建立同模板基线')
+        if lm.get('prompt_version', 'semantic_table_json/v3') != rm.get('prompt_version', 'semantic_table_json/v3'):
+            raise ValueError('评测提示版本不一致')
         right_plan = manifest_plan(rm)
         for field in fields:
             if field not in lm or field not in rm or lm[field] != rm[field]:

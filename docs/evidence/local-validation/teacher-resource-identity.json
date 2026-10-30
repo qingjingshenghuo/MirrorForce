@@ -1,0 +1,88 @@
+{
+  "protocol": "mirrorforce_policy_service/v1",
+  "backend": "checkpoint",
+  "checkpoint_sha256": "dd71087ce1bf827d9b8360c310ae4be02714b50b9535f4959544d24372d28561",
+  "weights": "iterate",
+  "receipt_sha256": "c632f31447df566c1dda9b1b685955bd0a5c2b711cf0784fbea29c9dff29c846",
+  "training_native_sha256": "7b37462eaed8cbf99e980d68b90416812f0449c40c01dcee889f9638fe1f3590",
+  "compute_dtype": "bfloat16",
+  "magnet": "uniform_legal",
+  "semantic_file_sha256": "49b1ba9494d517150c49ca6ad06db285ec36c9053b8e78ebd7e41544ffc3fb0a",
+  "card_tables_sha256": "f261202ace3caccf77245737a6b8ef9d67948958753f3add69f86fa2c480de56",
+  "device": {
+    "platform": "gpu",
+    "kind": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "count": 1,
+    "jax": "0.5.3"
+  },
+  "selection": "greedy",
+  "temperature": null,
+  "serving_native_sha256": "9783da71e0382201e2cec1c5a30dfc9cb3c8bc884fb1341a5b82928961b21720",
+  "native_build": {
+    "compiler": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+    "core_commit": "5760bde478561601a6ec6b4fc7f23f0ba351c3b6",
+    "core_tree": "7bc9b94f3ebfa4c4e7996b57872fd93dd7c27b35",
+    "deps": {
+      "SQLiteCpp-3.3.3": "bbc0b6d1d2cf4e2e52d881d5a18fe379bba8a716dac30e66e9aec10baa8aa5d7",
+      "concurrentqueue-include": "2952f74ba84c050bfb88188b24c2bb4ebb8a352259e2a169eabf70112da56059",
+      "fmt-10.2.1-include": "603f7d92334af8b1a31a9bdf9b0337fd67b08766530fc31200064bcc92502250",
+      "lua-5.3-include": "d3c93dc536c230cfa50656dd4fa87b5f079b519bc529d2ecb345f74fef010dae",
+      "lua-5.3-lib": "b51972b6b311b233d3eecffa9d64b139e7ae6f0d913f46015809ba5c0c0b03dc",
+      "pybind11-2.13.6/pybind11/include": "748c476646aae311469f15d2594cfdb2eb7d624d888a7c9b09f03c97969d1389",
+      "python3.11.13-include": "b8b1e1638c0a7fed0c9352744cbfece9ac1e7e0996e2a9d095e188217b2f412c",
+      "sqlite-amalgamation-3.45.1": "599a03183fac211ca2c10ed6b94c7f9cf7630e005510bf9a8bae3a6e70b571a8",
+      "unordered_dense-include": "b018703fd7c2d0e55e95819dc605c2cf12eae4641840485dbd95132312037cdb"
+    },
+    "flags": [
+      "-O2",
+      "-fPIC",
+      "-fvisibility=hidden",
+      "-march=x86-64-v3",
+      "-DNDEBUG"
+    ],
+    "outputs": {
+      "duel_native.cpython-311-x86_64-linux-gnu.so": "9783da71e0382201e2cec1c5a30dfc9cb3c8bc884fb1341a5b82928961b21720",
+      "liblua5.3.so.0": "99d643c45f9f501eb4d6d89e17b698b94fec0de11e459b9947fdfbe8902ddf52",
+      "libmfcore.so": "9f8febed0ca0cb3c59ac699aebd57b8fc397e22724bfadda165c89b62dab42e6"
+    },
+    "schema": "mirrorforce_duelpool_build/v1",
+    "shared_sources": [
+      "messages.cc",
+      "history.cc",
+      "public_tracker.cc",
+      "semantics.cc",
+      "encoding.cc",
+      "sha256.cc"
+    ],
+    "shared_tree": null,
+    "source_commit": null,
+    "source_tree": null,
+    "uncommitted_worktree_build": true
+  },
+  "cards_db_sha256": "24bc1c9bf75e3a3c5990976a128e51a48819f1bb7ab21495d264017ab6795afa",
+  "code_list_sha256": "36cc6eb86377eebef7424f0e25018412d8ccb6a6207b2d293af83910e21cda53",
+  "announce_tables_sha256": "3c7d93af1db79dc64048fca21cc6ba09a0b94f75066b0f9aad6f12ca7d939c20",
+  "client_config": {
+    "max_options": 192,
+    "max_steps": 1000,
+    "n_history_actions": 32,
+    "public_opponent_recipe": true,
+    "room_format": 0,
+    "room_era": 0
+  },
+  "card_view_law": {
+    "law": "refreshed_view",
+    "name": "refreshed_view/v1",
+    "source": "native.card_view_law"
+  },
+  "opponent_recipe_mode": "mirror",
+  "public_opponent_recipe": null,
+  "opponent_deck_sha256": null,
+  "client_public_world": {
+    "schema": "mirrorforce_client_public_world/v1",
+    "codec": "mirrorforce_public_world_codec/v1",
+    "source": "cloned-own-pending-client/v1",
+    "binding": "expected_obs_sha256",
+    "ownership": "client-connection/v1"
+  }
+}

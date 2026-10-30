@@ -330,15 +330,28 @@ def decode_compact_input(payload):
     return decode(payload["input"])
 
 
-def prompt_details(row, tokenizer, limit=4096):
+def prompt_details(row, tokenizer, limit=4096, prompt_style='compact'):
     """只裁剪最旧公开历史，绝不裁剪盘面和菜单，不修改原始数据。"""
     inputs = model_input(row)
     original_history = len(inputs["public_history"])
     history = inputs["public_history"]
+    if prompt_style not in ('compact', 'named_menu'):
+        raise ValueError('未知提示模板')
 
     def encode(removed):
         inputs["public_history"] = history[removed:]
         content = json.dumps(compact_input(inputs), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        if prompt_style == 'named_menu':
+            menu = []
+            for action in inputs['legal_actions']:
+                name = inputs['card_dictionary'].get(str(action.get('card_code')), {}).get('name', '')
+                fields = [action['token'], action.get('kind', ''), name]
+                fields.extend(f'{key}={action[key]}' for key in
+                    ('source_ref', 'candidate_ref', 'destination_ref', 'target_phase', 'position', 'number') if key in action)
+                if action.get('description'):
+                    fields.append(action['description'])
+                menu.append(' | '.join(str(field) for field in fields if field != ''))
+            content += '\n合法动作摘要（与上方完整菜单一一对应，只输出标记）：\n' + '\n'.join(menu)
         text = tokenizer.apply_chat_template([
             {"role": "system", "content": "根据本方可见盘面、公开历史和合法菜单选择动作。只输出一个合法动作标记，不输出解释。输入采用可逆紧凑JSON：$text索引引用text_pool完整正文。$table的columns按0起始编号；dense_rows按列顺序存值；或defaults存各列默认值，rows每行是[列号,覆盖值,...]，未覆盖列用默认值。$missing表示字段不存在。self/opponent表示本方/对手，位置ref末尾数字从0计数；offered_deck_card仅为本次获准选择的牌堆候选，不代表公开牌序。"},
             {"role": "user", "content": content}], tokenize=False, add_generation_prompt=True)
@@ -426,7 +439,25 @@ def validate(row):
     chosen = row.get("chosen_index")
     if type(chosen) is not int or not 0 <= chosen < n or row.get("chosen") != chosen or row.get("chosen_token") != TOKENS[chosen]:
         raise ValueError("动作索引或标记非法")
-    if row.get("action_mapping") != [{"token": TOKENS[i], "native_index": i} for i in range(n)]:
+    order = list(range(n))
+    augmentation = row.get('augmentation')
+    if augmentation is not None:
+        order = augmentation.get('order', [])
+        if augmentation.get('kind') != 'menu_permutation/v1' or len(order) != n or any(type(i) is not int for i in order) or sorted(order) != list(range(n)):
+            raise ValueError('菜单增强不是合法双射')
+        source = augmentation.get('source_legal_actions', [])
+        logits = augmentation.get('source_teacher_logits', [])
+        if len(source) != n or len(logits) != n:
+            raise ValueError('增强缺少原始动作或监督')
+        if row['legal_actions'] != [{**source[old], 'token': TOKENS[new]} for new,old in enumerate(order)] or row['teacher_logits'] != [logits[old] for old in order]:
+            raise ValueError('增强动作与监督错位')
+        if order[chosen] != augmentation.get('source_chosen_index'):
+            raise ValueError('增强行为动作错位')
+        original = model_input(row)
+        original['legal_actions'] = source
+        if digest(original) != augmentation.get('source_state_sha256'):
+            raise ValueError('增强改变了来源盘面或历史')
+    if row.get("action_mapping") != [{"token": TOKENS[i], "native_index": order[i]} for i in range(n)]:
         raise ValueError("动作映射错位")
     if any(a.get("token") != TOKENS[i] for i, a in enumerate(row["legal_actions"])):
         raise ValueError("菜单 token 与映射不同步")

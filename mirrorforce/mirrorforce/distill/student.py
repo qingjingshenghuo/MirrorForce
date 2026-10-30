@@ -15,7 +15,7 @@ def action_count(row):
 
 class Student:
     def __init__(self, base="Qwen/Qwen2.5-1.5B-Instruct", adapter=None, device="cuda", training=False,
-                 revision=None, seed=42, context_limit=None):
+                 revision=None, seed=42, context_limit=None, prompt_style=None):
         import torch
         from transformers import AutoTokenizer, AutoModelForCausalLM
         from peft import LoraConfig, get_peft_model, PeftModel
@@ -23,6 +23,12 @@ class Student:
         torch.manual_seed(seed)
         self.torch, self.device, self.training = torch, device, training
         saved = json.loads((Path(adapter) / "student.json").read_text()) if adapter else {}
+        self.prompt_style = prompt_style or saved.get('prompt_style', 'compact')
+        if self.prompt_style not in ('compact', 'named_menu'):
+            raise ValueError('未知提示模板')
+        self.prompt_version = 'named_action_menu/v1' if self.prompt_style == 'named_menu' else 'semantic_table_json/v3'
+        if prompt_style is None and saved.get('prompt_version', self.prompt_version) != self.prompt_version:
+            raise ValueError('提示模板版本已改变，禁止静默重载')
         if saved and saved.get("format") != FORMAT:
             raise ValueError("旧动作头检查点不能作为标准 LM 检查点恢复")
         self.base, self.revision = saved.get("base", base), saved.get("revision", revision)
@@ -97,7 +103,11 @@ class Student:
 
     def _inputs(self, rows):
         torch = self.torch
-        encoded = [prompt_text(row, self.tokenizer, limit=self.context_limit)[1] for row in rows]
+        if self.prompt_style == 'compact':
+            encoded = [prompt_text(row, self.tokenizer, limit=self.context_limit)[1] for row in rows]
+        else:
+            from .data import prompt_details
+            encoded = [prompt_details(row, self.tokenizer, self.context_limit, self.prompt_style)[1] for row in rows]
         if not encoded:
             raise ValueError("空批次")
         size = max(map(len, encoded))
@@ -122,7 +132,7 @@ class Student:
         if selection not in ("sample", "greedy") or not temperature > 0:
             raise ValueError("选择方式或温度无效")
         with torch.no_grad():
-            scores, _ = self.logits([row])
+            scores, input_tokens = self.logits([row])
             legal = scores[0, self.ids[:action_count(row)]] / temperature
             if not bool(torch.isfinite(legal).all()):
                 raise ValueError("学生动作分数非有限值，禁止静默执行")
@@ -131,6 +141,7 @@ class Student:
                 generator = torch.Generator(device=self.device).manual_seed(seed)
             index = int(legal.argmax()) if selection == "greedy" else int(torch.multinomial(logp.exp(), 1, generator=generator))
         return {"index": index, "token": TOKENS[index],
+                "input_tokens": input_tokens,
                 "logprob": float(logp[index]) if selection == "sample" else 0.,
                 "policy_logprob": float(logp[index]), "selection": selection, "temperature": temperature}
 
@@ -172,6 +183,8 @@ class Student:
             "revision": self.revision, "action_token_ids": self.ids, "action_tokens": TOKENS,
             "original_vocab": self.original_vocab, "base_tokenizer_size": self.base_tokenizer_size,
             "context_limit": self.context_limit,
+            "prompt_style": self.prompt_style,
+            "prompt_version": self.prompt_version,
             "tied": self.tied, "initialization": "mean_noise_0.001/v1",
             "rank": 16, "alpha": 32, "dropout": .05}, indent=2), encoding="utf-8")
 

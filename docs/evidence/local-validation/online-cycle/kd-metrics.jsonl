@@ -1,0 +1,1 @@
+{"step": 1, "loss": 0.5556862950325012, "effective_tokens": 3661, "update_decisions": 1, "update_seconds": 5.626496939000049, "input_tokens_per_second": 650.6712861823114, "cuda_peak_allocated_bytes": 5097425408, "cuda_peak_reserved_bytes": 6312427520}

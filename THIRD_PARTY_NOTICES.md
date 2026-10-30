@@ -26,6 +26,12 @@ Fluorohydride.
 
 ## Not included
 
+The optional local evaluation adapter downloads [IceYGO/WindBot](https://github.com/IceYGO/windbot),
+MIT licensed, Copyright (c) 2015-2017 IceYGO, into the ignored local-resources directory.
+Its executables and full source are not vendored here. The small Mono compatibility and deterministic-seed
+patch is in local-tools/windbot-mono-seed.patch; the upstream license is retained alongside the patch.
+This evaluation build is versioned separately from the original MirrorForce author's WinBot benchmark.
+
 The card database (`cards.cdb`), the Lua card scripts, training data and WinBot are not part of this repository.
 The champion's weights are a release asset, bundled with the card database and the scripts they were trained with;
 the scripts in that bundle are GPL-2.0 (Fluorohydride/ygopro-scripts). Yu-Gi-Oh! is a trademark of its owners; this project is not affiliated with or endorsed by them.

@@ -43,11 +43,13 @@ def main(argv=None):
     p.add_argument("--adapter")
     p.add_argument("--student", action="store_true", help="使用学生，省略则采集教师示范")
     p.add_argument("--independent-student", action="store_true", help="学生不查询教师评分，仅对手使用教师服务")
+    p.add_argument("--windbot-exe", type=Path, help="固定WindBot可执行文件；仅独立学生评测")
     p.add_argument("--selection", choices=["sample", "greedy"], default="sample")
     p.add_argument("--temperature", type=float, default=1.)
     p.add_argument("--base", default="Qwen/Qwen2.5-1.5B-Instruct")
     p.add_argument("--device", default="cuda")
     p.add_argument("--context-limit", type=int, help="学生上下文上限，包含唯一动作输出")
+    p.add_argument('--prompt-style', choices=['compact', 'named_menu'])
     p.add_argument("--seed", type=int, default=100000)
     p.add_argument("--pairs", type=int, default=10)
     p.add_argument("--max-samples", type=int, default=10000)
@@ -56,6 +58,8 @@ def main(argv=None):
     p.add_argument("--budget-yuan", type=float, default=50)
     p.add_argument("--local", action="store_true", help="本机免费验证模式，单价和云端预算必须均为0")
     a = p.parse_args(argv)
+    if a.windbot_exe and not a.independent_student:
+        p.error('WindBot仅用于独立学生评测')
     if a.adapter and not a.student or a.independent_student and not a.student or min(a.pairs, a.max_samples, a.game_seconds, a.temperature) <= 0:
         p.error("无效采样配置")
     try:
@@ -83,7 +87,7 @@ def main(argv=None):
     a.out.mkdir(parents=True, exist_ok=False)
     if a.student:
         from .student import Student
-        chooser = Student(a.base, a.adapter, a.device, context_limit=a.context_limit)
+        chooser = Student(a.base, a.adapter, a.device, context_limit=a.context_limit, prompt_style=a.prompt_style)
     else:
         chooser = None
     texts, cards, recipe = CardTexts(a.cards_db), CardPool(a.cards_db), load_ydk(a.deck)
@@ -112,6 +116,10 @@ def main(argv=None):
                "serializer_version": SERIALIZER_VERSION, "selection": a.selection if a.student else "greedy",
                "student_checkpoint_sha": student_sha, "tokenizer_hash": tokenizer_sha}
     manifest["context_limit"] = chooser.context_limit if chooser is not None else a.context_limit
+    manifest['prompt_style'] = chooser.prompt_style if chooser is not None else 'not_applicable'
+    manifest['prompt_version'] = chooser.prompt_version if chooser is not None else 'not_applicable'
+    manifest['opponent_identity'] = ({'kind': 'windbot', 'exe_sha256': sha256(a.windbot_exe),
+        'executor': 'SkyStriker'} if a.windbot_exe else {'kind': 'teacher', 'identity': identity})
     (a.out / "manifest.json").write_text(json.dumps(manifest, default=str, indent=2), encoding="utf-8")
     count, results, stop = 0, [], "completed"
     with tempfile.TemporaryDirectory(dir=a.out) as scratch, \
@@ -132,6 +140,9 @@ def main(argv=None):
                 def factory(role, seat):
                     args = ("unix:" + str(a.teacher), identity)
                     if role == "b":
+                        if a.windbot_exe:
+                            from .windbot import WindBotPolicy
+                            return WindBotPolicy(identity, a.windbot_exe, a.deck, a.cards_db, seed=seed)
                         opponent = RemotePolicy(*args, seed=seed, timeout=120)
                         opponents.append(opponent)
                         return opponent
@@ -157,7 +168,10 @@ def main(argv=None):
                 result.update(game_id=game_id,
                               teacher_queries=0 if a.independent_student else sum(len(p.decisions) for p in held),
                               opponent_teacher_queries=sum(len(p.decisions) for p in opponents),
-                              latency_ms=[r["student_ms"] for p in held for r in p.decisions if "student_ms" in r])
+                              model_decisions=sum(bool(r.get("model_called")) for p in held for r in p.decisions),
+                              forced_menu_decisions=sum(bool(r.get("forced")) for p in held for r in p.decisions),
+                              decision_trace=[r for p in held for r in p.decisions],
+                              latency_ms=[r["student_ms"] for p in held for r in p.decisions if r.get("model_called")])
                 rows = [r for policy in held for r in policy.samples]
                 if not result["error"] and count + len(rows) <= a.max_samples:
                     for row in rows:
@@ -186,7 +200,7 @@ def main(argv=None):
                 games.write(json.dumps(result, ensure_ascii=False) + "\n")
                 games.flush()
                 samples.flush()
-                print(json.dumps({k: v for k, v in result.items() if k != "latency_ms"}), flush=True)
+                print(json.dumps({k: v for k, v in result.items() if k not in ("latency_ms", "decision_trace")}), flush=True)
             if split != "test" and count >= a.max_samples:
                 stop = "sample_limit"
                 break

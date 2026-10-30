@@ -7,6 +7,20 @@ import subprocess
 import time
 
 
+def evaluation_command(cfg, py, root, name, adapter):
+    """固定WinBot评测无需教师网络；保留显式冠军对手配置兼容入口。"""
+    if not cfg.get('windbot_exe'):
+        return None
+    command = py + ['mirrorforce.distill.arena', '--rules', str(root / 'demonstrations' / 'manifest.json'),
+        '--adapter', str(adapter), '--deck', cfg['deck'], '--cards-db', cfg['cards_db'],
+        '--script-root', cfg['script_root'], '--native', cfg['native'],
+        '--windbot-exe', cfg['windbot_exe'], '--out', str(root / f'eval-{name}'),
+        '--seed', str(cfg.get('eval_seed', 300100)), '--pairs', str(cfg.get('eval_pairs', 50))]
+    if cfg.get('prompt_style'):
+        command += ['--prompt-style', cfg['prompt_style']]
+    return command
+
+
 def _main(argv, stack):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--config", type=Path, required=True)
@@ -32,6 +46,9 @@ def _main(argv, stack):
               "online-1", "online-2", "online-3", "evaluation"]
     if a.dry_run:
         print(json.dumps({"stages": stages, "root": str(root), "budget_yuan": cap,
+                          "initial_sft": cfg.get("initial_sft", {}),
+                          "branch_training": cfg.get("branch_training", {}),
+                          "requires_real_data_coverage_audit": True,
                           "teacher_command": cfg["teacher_command"]}, ensure_ascii=False, indent=2))
         return
     root.mkdir(parents=True, exist_ok=a.resume)
@@ -41,6 +58,11 @@ def _main(argv, stack):
     cost_journal.recover()
     from .stages import StageLedger, source_identity, file_hash
     resources = {key: file_hash(cfg[key]) for key in ("deck", "cards_db", "native")}
+    if cfg.get('windbot_exe'):
+        bot_root = Path(cfg['windbot_exe']).parent
+        for item in sorted(bot_root.rglob('*')):
+            if item.is_file() and item.suffix in ('.exe', '.dll', '.json', '.config'):
+                resources[str(item.resolve())] = file_hash(item)
     script_root = Path(cfg["script_root"])
     for item in sorted(script_root.rglob("*")):
         if item.is_file() and ("script" in item.relative_to(script_root).parts or item.suffix in (".json", ".npz", ".txt", ".ckpt")):
@@ -156,6 +178,8 @@ def _main(argv, stack):
                    "--pairs", str(pairs), "--max-samples", str(limit), "--budget-yuan", str(cap)]
         if adapter:
             command += ["--student", "--adapter", str(adapter)]
+            if cfg.get('prompt_style'):
+                command += ['--prompt-style', cfg['prompt_style']]
             command += ["--context-limit", str(cfg.get("context_limit", 16384))]
             if seed >= 300000:
                 command += ["--selection", "greedy", "--independent-student"]
@@ -166,15 +190,25 @@ def _main(argv, stack):
         return root / name / "samples.jsonl"
 
     def train(name, data, objective, adapter=None):
+        options = cfg.get("initial_sft" if name == "sft" else "branch_training", {})
         command = py + ["mirrorforce.distill.train", "--data", str(data), "--out", str(root / name),
-                        "--objective", objective, "--steps", str(cfg.get("steps", 200)),
+                        "--objective", objective, "--steps", str(options.get("steps", cfg.get("steps", 200))),
                         "--base", cfg.get("base", "Qwen/Qwen2.5-1.5B-Instruct"),
                         "--revision", cfg.get("revision", "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"),
                         "--context-limit", str(cfg.get("context_limit", 16384)),
-                        "--tokens-per-update", str(cfg.get("tokens_per_update", 16384)),
-                        "--token-budget", str(cfg.get("token_budget", 2000000))]
+                        "--tokens-per-update", str(options.get("tokens_per_update", cfg.get("tokens_per_update", 16384))),
+                        "--save-every", str(options.get("save_every", cfg.get("save_every", 50))),
+                        "--keep-last", str(options.get("keep_last", cfg.get("keep_last", 0))),
+                        "--min-observed-coverage", str(options.get("min_observed_coverage", 0)),
+                        "--token-budget", str(options.get("token_budget", cfg.get("token_budget", 2000000)))]
         if adapter:
             command += ["--adapter", str(adapter)]
+        if cfg.get('prompt_style'):
+            command += ['--prompt-style', cfg['prompt_style']]
+        if options.get('permute_menus', False):
+            command += ['--permute-menus']
+        if options.get('action_lr', cfg.get('action_lr')) is not None:
+            command += ['--action-lr', str(options.get('action_lr', cfg.get('action_lr')))]
         run(name, command)
         result = json.loads((root / name / "result.json").read_text())
         if result["steps"] == 0:
@@ -196,8 +230,16 @@ def _main(argv, stack):
         current = train(f"online-kd-{round_id}", online, "kd", current)
     variants["online-kd"] = current
     for name, adapter in variants.items():
-        collect(f"eval-{name}", 300000, cfg.get("eval_pairs", 50), 100000, adapter)
-        run(f"audit-{name}", py + ["mirrorforce.distill.audit", "--data", str(validation), "--adapter", adapter])
+        command = evaluation_command(cfg, py, root, name, adapter)
+        if command:
+            run(f'eval-{name}', command)
+        else:
+            collect(f"eval-{name}", cfg.get('eval_seed', 300100), cfg.get("eval_pairs", 50), 100000, adapter)
+        audit_command = py + ["mirrorforce.distill.audit", "--data", str(validation), "--adapter", adapter,
+            '--context-limit', str(cfg.get('context_limit', 16384))]
+        if cfg.get('prompt_style'):
+            audit_command += ['--prompt-style', cfg['prompt_style']]
+        run(f"audit-{name}", audit_command)
     (root / "variants.json").write_text(json.dumps(variants, indent=2), encoding="utf-8")
     run("final-report", py + ["mirrorforce.distill.report", "--root", str(root)])
 

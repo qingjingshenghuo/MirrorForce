@@ -32,6 +32,22 @@ def configure_reproducibility(device):
             "capability": list(torch.cuda.get_device_capability(device)) if cuda else None}
 
 
+def token_coverage(lengths, quota):
+    """审计每种长度能否参与完整样本的精确配额更新。"""
+    if not lengths or min(lengths) <= 0 or quota <= 0:
+        raise ValueError("长度与配额必须为正数")
+    coins = sorted(set(lengths))
+    reachable = bytearray(quota + 1)
+    reachable[0] = 1
+    for total in range(1, quota + 1):
+        reachable[total] = any(n <= total and reachable[total - n] for n in coins)
+    eligible = [n <= quota and bool(reachable[quota - n]) for n in lengths]
+    return {"quota": quota, "quota_reachable": bool(reachable[quota]),
+            "input_lengths": lengths, "eligible": eligible,
+            "excluded_indexes": [i for i, ok in enumerate(eligible) if not ok],
+            "eligible_fraction": sum(eligible) / len(eligible)}
+
+
 def exact_token_sampler(lengths, quota):
     """无截断地凑齐每次更新的有效 token 数；不可达就明确拒绝。"""
     groups = {}
@@ -44,6 +60,9 @@ def exact_token_sampler(lengths, quota):
         reachable[total] = any(length <= total and reachable[total - length] for length in coins)
     if not reachable[quota]:
         raise ValueError("当前数据无法凑齐指定 token 配额；不能声称等预算对照")
+    excluded = [i for i, n in enumerate(lengths) if n > quota or not reachable[quota - n]]
+    if excluded:
+        raise ValueError(f"精确token配额永久排除样本索引：{excluded}；请先审计并调整共同配额")
 
     def draw(rng):
         remainder, indexes = quota, []
@@ -86,14 +105,21 @@ def main(argv=None):
     p.add_argument("--steps", type=int, default=200)
     p.add_argument("--accumulate", type=int, default=8)
     p.add_argument("--lr", type=float, default=0.0001)
+    p.add_argument('--action-lr', type=float, help='新增动作行学习率，缺省与LoRA相同')
+    p.add_argument('--permute-menus', action='store_true', help='在每步同步置换菜单与监督；仅支持非精确配额组批')
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda")
     p.add_argument("--context-limit", type=int, help="输入加动作的token上限，缺省继承检查点或使用4096")
+    p.add_argument('--prompt-style', choices=['compact', 'named_menu'])
     p.add_argument("--save-every", type=int, default=50)
+    p.add_argument("--keep-last", type=int, default=0, help="仅保留本任务最新N个检查点，0表示全保留；发布阶段账本前清理")
+    p.add_argument("--min-observed-coverage", type=float, default=0., help="实际独立状态访问率下限；冒烟可为0，正式实验需预先指定")
     p.add_argument("--token-budget", type=int, default=2000000, help="有效输入 token 上限，下一更新超限则停止")
     p.add_argument("--tokens-per-update", type=int, default=0, help="正数时按确切有效 token 数组批；覆盖 accumulate")
     a = p.parse_args(argv)
-    if a.adapter and a.resume or min(a.steps, a.accumulate, a.save_every, a.token_budget) <= 0 or a.tokens_per_update < 0:
+    if a.permute_menus and a.tokens_per_update or a.action_lr is not None and not 0 < a.action_lr < float('inf'):
+        p.error('菜单增强不能冒充精确等token组批，动作学习率必须为有限正数')
+    if a.adapter and a.resume or min(a.steps, a.accumulate, a.save_every, a.token_budget) <= 0 or a.tokens_per_update < 0 or a.keep_last < 0 or not 0 <= a.min_observed_coverage <= 1:
         p.error("参数冲突或预算不是正数")
     import torch
     import numpy as np
@@ -106,10 +132,28 @@ def main(argv=None):
     if not rows:
         raise ValueError("没有训练样本")
     data_sha = hashlib.sha256(a.data.read_bytes()).hexdigest()
-    student = Student(a.base, a.resume or a.adapter, a.device, True, a.revision, a.seed, context_limit=a.context_limit)
-    lengths = [len(prompt_text(row, student.tokenizer, limit=student.context_limit)[1]) for row in rows]
+    student = Student(a.base, a.resume or a.adapter, a.device, True, a.revision, a.seed, context_limit=a.context_limit, prompt_style=a.prompt_style)
+    if student.prompt_style == 'compact':
+        lengths = [len(prompt_text(row, student.tokenizer, limit=student.context_limit)[1]) for row in rows]
+    else:
+        from .data import prompt_details
+        lengths = [len(prompt_details(row, student.tokenizer, student.context_limit, student.prompt_style)[1]) for row in rows]
+    coverage = token_coverage(lengths, a.tokens_per_update) if a.tokens_per_update else {
+        "input_lengths": lengths, "eligible": [True] * len(rows), "excluded_indexes": [], "eligible_fraction": 1.}
+    # 审计独立于输出目录，配置失败也必须留下可检查的排除明细。
+    audit_path = a.out.parent / (a.out.name + "-coverage.json")
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    coverage["excluded_metadata"] = [{"index": i, "game_id": rows[i].get("game_id"),
+        "turn": rows[i].get("view", {}).get("turn"),
+        "phase": rows[i].get("view", {}).get("phase"),
+        "action_kinds": sorted({str(action.get("kind", "unknown")) for action in rows[i].get("legal_actions", [])}),
+        "prompt_msg": rows[i].get("view", {}).get("prompt_msg")} for i in coverage["excluded_indexes"]]
+    if audit_path.exists() and json.loads(audit_path.read_text(encoding="utf-8")) != coverage:
+        raise ValueError("覆盖审计文件已存在且配置不同，请使用新的输出目录")
+    audit_path.write_text(json.dumps(coverage, ensure_ascii=False, indent=2), encoding="utf-8")
     sampler = exact_token_sampler(lengths, a.tokens_per_update) if a.tokens_per_update else None
-    optimizer = torch.optim.AdamW(student.optimizer_groups(a.lr), lr=a.lr)
+    from .optimizer import ActionRowAdamW
+    optimizer = ActionRowAdamW(student, a.lr, a.action_lr)
     rng, start, tokens = random.Random(a.seed), 0, 0
     sample_counts = [0] * len(rows)
     source = source_identity()
@@ -121,8 +165,13 @@ def main(argv=None):
                 "lr": a.lr, "seed": a.seed, "tokens_per_update": a.tokens_per_update,
                 "base": student.base, "revision": student.revision, "action_ids": student.ids,
                 "context_limit": student.context_limit,
+                "prompt_style": student.prompt_style,
+                "prompt_version": student.prompt_version,
+                "min_observed_coverage": a.min_observed_coverage,
                 "loss_version": "standard_lm_full_vocab_sft_legal_kd/v2",
                 "runtime": runtime_identity}
+    identity['optimizer_format'] = optimizer.format
+    identity.update(action_lr=a.lr if a.action_lr is None else a.action_lr, permute_menus=a.permute_menus)
     if a.resume:
         state = torch.load(Path(a.resume) / "training.pt", map_location="cpu", weights_only=False)
         if state["identity"] != identity:
@@ -152,6 +201,12 @@ def main(argv=None):
                    pending / "training.pt")
         # 完整权重与优化器全部写入后才发布可恢复目录。
         pending.rename(path)
+        if a.keep_last:
+            import shutil
+            for old in sorted(a.out.glob("step-*"))[:-a.keep_last]:
+                if old.resolve().parent != a.out.resolve() or not (old / "training.pt").is_file():
+                    raise ValueError("拒绝清理非本任务检查点")
+                shutil.rmtree(old)
         return path
 
     last_saved, step = None, start
@@ -160,6 +215,16 @@ def main(argv=None):
             before = rng.getstate()
             indexes = sampler(rng) if sampler else [rng.randrange(len(rows)) for _ in range(a.accumulate)]
             needed = sum(lengths[i] for i in indexes)
+            batch = [rows[i] for i in indexes]
+            if a.permute_menus:
+                from .augmentation import permute_training_menu
+                from .data import prompt_details, validate
+                batch = []
+                for index in indexes:
+                    order = list(range(len(rows[index]['legal_actions'])))
+                    rng.shuffle(order)
+                    batch.append(validate(permute_training_menu(rows[index], order)))
+                needed = sum(len(prompt_details(row,student.tokenizer,student.context_limit,student.prompt_style)[1]) for row in batch)
             if tokens + needed > a.token_budget:
                 rng.setstate(before)
                 step -= 1
@@ -170,9 +235,9 @@ def main(argv=None):
                 torch.cuda.reset_peak_memory_stats()
             begun = time.monotonic()
             total = 0.
-            for i in indexes:
-                scores, _ = student.logits([rows[i]])
-                loss = action_loss(scores, [rows[i]], a.objective, student.ids) / len(indexes)
+            for row in batch:
+                scores, _ = student.logits([row])
+                loss = action_loss(scores, [row], a.objective, student.ids) / len(indexes)
                 if not torch.isfinite(loss):
                     raise ValueError("训练损失非有限值")
                 loss.backward()
@@ -200,7 +265,11 @@ def main(argv=None):
     (a.out / "result.json").write_text(json.dumps({"checkpoint": str(last_saved.resolve()), "steps": step,
         "effective_tokens": tokens, "note": "对照必须核对实际 token 数；相同上限不等于实际预算相同"}, ensure_ascii=False), encoding="utf-8")
     (a.out / "sampling-audit.json").write_text(json.dumps({"input_lengths": lengths,
-        "sample_counts": sample_counts, "total_decisions": sum(sample_counts)}, indent=2), encoding="utf-8")
+        "sample_counts": sample_counts, "total_decisions": sum(sample_counts),
+        "unique_decisions": sum(n > 0 for n in sample_counts),
+        "observed_coverage": sum(n > 0 for n in sample_counts) / len(rows)}, indent=2), encoding="utf-8")
+    if sum(n > 0 for n in sample_counts) / len(rows) < a.min_observed_coverage:
+        raise ValueError("实际样本覆盖率低于预定下限；保留检查点和审计，不接受为完成阶段")
 
 
 if __name__ == "__main__":

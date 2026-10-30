@@ -1,0 +1,19 @@
+{
+  "schema": "real_qwen_resume_check/v1",
+  "checks": [
+    {
+      "file": "adapter_model.safetensors",
+      "max_abs_difference": 0.0,
+      "bitwise_equal": true
+    },
+    {
+      "file": "action_rows.safetensors",
+      "max_abs_difference": 0.0,
+      "bitwise_equal": true
+    }
+  ],
+  "fixed_input_tokens": 3865,
+  "distribution_max_abs_difference": 0.0,
+  "distribution_bitwise_equal": true,
+  "passed": true
+}

@@ -41,6 +41,41 @@ class Tokenizer:
         return list(text)
 
 
+def test_named_menu_preserves_full_input_and_only_visible_names():
+    from mirrorforce.distill.data import prompt_details
+    row = sample()
+    text, _, _ = prompt_details(row, Tokenizer(), 20000, 'named_menu')
+    assert '合法动作摘要' in text and '测试卡' in text and '测试效果' in text
+    assert all(token in text for token in TOKENS[:2])
+    changed = copy.deepcopy(row)
+    changed['teacher_logits'] = [999., -999.]
+    changed['teacher_identity'] = '私密教师身份'
+    assert text == prompt_details(changed, Tokenizer(), 20000, 'named_menu')[0]
+    assert '私密教师身份' not in text
+
+
+def test_menu_augmentation_keeps_native_mapping_and_supervision():
+    from mirrorforce.distill.augmentation import permute_training_menu
+    from mirrorforce.distill.data import model_input
+    row = sample()
+    changed = validate(permute_training_menu(row, [1, 0]))
+    assert changed['chosen_index'] == 0
+    assert changed['teacher_logits'] == [1., 0.]
+    assert changed['action_mapping'][0]['native_index'] == 1
+    assert 'augmentation' not in model_input(changed)
+    assert row['chosen_index'] == 1 and 'augmentation' not in row
+    changed['observation']['lp'] = [1, 2]
+    with pytest.raises(ValueError, match='来源盘面'):
+        validate(changed)
+
+
+@pytest.mark.parametrize('order', [[0, 0], [True, 0], [0], [0, '1']])
+def test_menu_augmentation_rejects_invalid_bijection(order):
+    from mirrorforce.distill.augmentation import permute_training_menu
+    with pytest.raises(ValueError):
+        permute_training_menu(sample(), order)
+
+
 def test_hidden_truth_is_not_serialized_but_own_card_is():
     rows = [native_action()]
     assert public_view(observer(123), rows) == public_view(observer(987), rows)

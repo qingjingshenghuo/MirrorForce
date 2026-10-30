@@ -35,6 +35,9 @@ def build_report(root):
         left, right = manifests["online-kd"], manifests["offline-kd"]
         keys = ("deck_sha256", "cards_db_sha256", "native_sha256", "teacher_identity", "pairing", "serializer_version", "selection", "context_limit")
         identity_matches = all(k in left and k in right and left[k] == right[k] for k in keys)
+        identity_matches = identity_matches and left.get('opponent_identity') == right.get('opponent_identity')
+        identity_matches = identity_matches and left.get('prompt_style', 'compact') == right.get('prompt_style', 'compact')
+        identity_matches = identity_matches and left.get('prompt_version', 'semantic_table_json/v3') == right.get('prompt_version', 'semantic_table_json/v3')
         if identity_matches:
             comparison = compare(games["online-kd"], games["offline-kd"], manifest_plan(left), manifest_plan(right))
     evaluations_complete = all(manifests[k] is not None and k in games

@@ -97,6 +97,15 @@ def test_old_format_rejected(tmp_path):
         Student(adapter=tmp_path, device="cpu")
 
 
+def test_named_prompt_style_survives_checkpoint(tiny_base, tmp_path):
+    from mirrorforce.distill.student import Student
+    model = Student(str(tiny_base), device='cpu', prompt_style='named_menu')
+    path = tmp_path / 'named'
+    model.save(path)
+    restored = Student(adapter=path, device='cpu')
+    assert restored.prompt_style == 'named_menu' and restored.prompt_version == 'named_action_menu/v1'
+
+
 def test_padded_model_vocab_does_not_collide_with_new_tokens(monkeypatch, tiny_base, tmp_path):
     from transformers import AutoModelForCausalLM
     from mirrorforce.distill.student import Student

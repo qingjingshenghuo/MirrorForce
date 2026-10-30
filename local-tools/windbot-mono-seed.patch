@@ -1,0 +1,41 @@
+diff --git a/Game/AI/Decks/ThunderDragonExecutor.cs b/Game/AI/Decks/ThunderDragonExecutor.cs
+index 0f3ffd3..9321d39 100644
+--- a/Game/AI/Decks/ThunderDragonExecutor.cs
++++ b/Game/AI/Decks/ThunderDragonExecutor.cs
+@@ -492,7 +492,9 @@ namespace WindBot.Game.AI.Decks
+                          || (copy_cards[i].Id == CardId.ThunderDragonmatrix && HasInZoneNoActivate(CardId.ThunderDragonmatrix, CardLocation.MonsterZone)))
+                     {
+                         if (i <= 0) continue;
+-                        (copy_cards[i], copy_cards[0]) = (copy_cards[0], copy_cards[i]);
++                        ClientCard swapCard = copy_cards[i];
++                        copy_cards[i] = copy_cards[0];
++                        copy_cards[0] = swapCard;
+                     }
+                 }
+                 return Util.CheckSelectCount(copy_cards, cards, min, max);
+@@ -1286,7 +1288,9 @@ namespace WindBot.Game.AI.Decks
+                     {
+                         if (i > 0)
+                         {
+-                            (link_materials[i], link_materials[0]) = (link_materials[0], link_materials[i]);
++                            ClientCard swapMaterial = link_materials[i];
++                            link_materials[i] = link_materials[0];
++                            link_materials[0] = swapMaterial;
+                         }
+                         index = i;
+                         break;
+diff --git a/Program.cs b/Program.cs
+index f4fded2..349c8e1 100644
+--- a/Program.cs
++++ b/Program.cs
+@@ -48,7 +48,9 @@ namespace WindBot
+ 
+         public static void InitDatas(string databasePath)
+         {
+-            Rand = new Random();
++            int fixedSeed;
++            Rand = int.TryParse(Environment.GetEnvironmentVariable("WINDBOT_SEED"), out fixedSeed)
++                ? new Random(fixedSeed) : new Random();
+             DecksManager.Init();
+             string absolutePath = Path.GetFullPath(databasePath);
+             if (!File.Exists(absolutePath))
